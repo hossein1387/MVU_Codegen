@@ -65,7 +65,7 @@ class Generator():
         t.add_row(['ilength', 'ijump', 'wlength', 'wjump', 'countdown'])
         input_shape = self.input_shape
         for layer in self.model.parsed_model:
-            import ipdb as pdb; pdb.set_trace()
+            # import ipdb as pdb; pdb.set_trace()
             iShape = input_shape
             fShape = [layer['out_channels'], layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]

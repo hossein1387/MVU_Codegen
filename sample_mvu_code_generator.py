@@ -8,7 +8,6 @@ def parse_args():
     parser.add_argument('--aprec', help='Activation precision', required=False, default=2, type=int)
     parser.add_argument('--wprec', help='Weight precision', required=False, default=2, type=int)
     parser.add_argument('--oprec', help='Output precision', required=False, default=2, type=int)
-    parser.add_argument('--oprec', help='Output precision', required=False, default=2, type=int)
     args = parser.parse_args()
     return vars(args)
 
