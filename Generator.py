@@ -64,6 +64,7 @@ class Generator():
         t = Texttable(max_width=120)
         t.add_row(['ilength', 'ijump', 'wlength', 'wjump', 'countdown'])
         input_shape = self.input_shape
+        total_cycles = 0
         for layer in self.model.parsed_model:
             # import ipdb as pdb; pdb.set_trace()
             iShape = input_shape
@@ -75,8 +76,11 @@ class Generator():
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride)
             t.add_row([ilength, ijump, wlength, wjump, countdown])
             input_shape = self.infer_activation_shape(input_shape, fShape, padding, stride)
+            total_cycles += countdown
         print("\nGenerated MVU configuration:")
         print(t.draw())
+        print("Total countdown: {}".format(int(total_cycles)))
+
 
     def print_mvU_param(self):
         pass
