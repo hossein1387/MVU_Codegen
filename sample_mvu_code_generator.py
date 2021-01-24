@@ -15,6 +15,7 @@ if __name__ == '__main__':
     args = parse_args()
     model = OnnxParser(args['onnx_model'])
     model.print_onnx_model()
+    model.print_onnx_graph()
     precision = [args['aprec'], args['wprec'], args['oprec']]
     input_shape = [3,32,32]
     generator = Generator(model, precision, input_shape)
