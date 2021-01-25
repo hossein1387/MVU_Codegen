@@ -1,4 +1,5 @@
 from texttable import Texttable
+from math import ceil
 
 class Generator():
     """docstring for Generator"""
@@ -62,21 +63,23 @@ class Generator():
 
     def generate_mvu_configs(self):
         t = Texttable(max_width=160)
-        t.add_row(['iShape', 'fShape', 'ilength', 'ijump', 'wlength', 'wjump', 'countdown'])
+        t.add_row(['iShape', 'fShape', 'ilength', 'ijump', 'wlength', 'wjump', 'countdown', 'total layer countdown'])
         input_shape = self.input_shape
+        input_shape[0] = ceil(input_shape[0]/64)
         total_cycles = 0
         for layer in self.model.parsed_model:
             # import ipdb as pdb; pdb.set_trace()
             iShape = input_shape
-            fShape = [layer['out_channels'], layer['kernel_size'][0], layer['kernel_size'][1]]
+            fShape = [ceil(layer['out_channels']/64), layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]
             padding = layer['padding'][0]
             prec = self.prec
             # print("{} * {}".format(iShape, fShape))
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride)
-            t.add_row([iShape, fShape, ilength, ijump, wlength, wjump, countdown])
+            total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
+            t.add_row([iShape, fShape, ilength, ijump, wlength, wjump, countdown, total_layer_countdown])
             input_shape = self.infer_activation_shape(input_shape, fShape, padding, stride)
-            total_cycles += countdown
+            total_cycles += total_layer_countdown
         print("\nGenerated MVU configuration:")
         print(t.draw())
         print("Total countdown: {}".format(int(total_cycles)))
