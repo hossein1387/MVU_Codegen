@@ -55,6 +55,8 @@ class Generator():
     def infer_activation_shape(self, input, kernel, padding, stride):
         iC, iH, iW = input
         fC, fH, fW = kernel
+        iC = int(iC/64)
+        fC = int(fC/64)
         oH=int((iH-fH+2*padding)/stride)+1
         oW=int((iW-fW+2*padding)/stride)+1
         oC=fC
@@ -65,6 +67,7 @@ class Generator():
         t.add_row(['iShape', 'fShape', 'ilength', 'ijump', 'wlength', 'wjump', 'countdown'])
         input_shape = self.input_shape
         total_cycles = 0
+        input_shape[0] = int(input_shape[0]/64)
         for layer in self.model.parsed_model:
             # import ipdb as pdb; pdb.set_trace()
             iShape = input_shape
