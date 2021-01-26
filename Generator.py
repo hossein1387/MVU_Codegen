@@ -1,5 +1,6 @@
 from texttable import Texttable
 from math import ceil
+import sys
 
 class Generator():
     """docstring for Generator"""
@@ -9,6 +10,15 @@ class Generator():
         self.model = model
         self.prec = prec
         self.input_shape = input_shape
+
+    def check_model_is_valid(self):
+        # check if there are residual connections
+        for layer in self.model.parsed_graph:
+            # import ipdb as pdb; pdb.set_trace()
+            if len(layer['input_node']) > 1 and (layer['node_type']!="Reshape"):
+                # import ipdb as pdb; pdb.set_trace()
+                print(" ==> Models with residual connections is not supported <==")
+                sys.exit()
 
     # iprec: Input data precision
     # wprec: Weight precision
@@ -56,22 +66,20 @@ class Generator():
     def infer_activation_shape(self, input, kernel, padding, stride):
         iC, iH, iW = input
         fC, fH, fW = kernel
-        iC = int(iC/64)
-        fC = int(fC/64)
         oH=int((iH-fH+2*padding)/stride)+1
         oW=int((iW-fW+2*padding)/stride)+1
         oC=fC
         return [oC, oH, oW]
 
     def generate_mvu_configs(self):
+        self.check_model_is_valid()
         t = Texttable(max_width=160)
         t.add_row(['iShape', 'fShape', 'ilength', 'ijump', 'wlength', 'wjump', 'countdown', 'total layer countdown'])
+        # import ipdb as pdb; pdb.set_trace()
         input_shape = self.input_shape
         input_shape[0] = ceil(input_shape[0]/64)
         total_cycles = 0
-        input_shape[0] = int(input_shape[0]/64)
         for layer in self.model.parsed_model:
-            # import ipdb as pdb; pdb.set_trace()
             iShape = input_shape
             fShape = [ceil(layer['out_channels']/64), layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]

@@ -40,9 +40,12 @@ class OnnxParser():
     def get_onnx_graph_attrib(self, node):
         attribs = {}
         all_int = True
+        all_inps = []
         for inp in node.input:
             all_int *= inp.isdecimal()
-        attribs['input_node'] = node.input if all_int else node.input[0]
+            if inp.isdecimal():
+                all_inps.append(inp)
+        attribs['input_node'] = all_inps if all_int else [node.input[0]]
         attribs['output_node'] = node.output
         attribs['node_type'] = node.op_type
         return attribs
