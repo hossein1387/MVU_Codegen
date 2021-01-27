@@ -1,6 +1,7 @@
 from texttable import Texttable
 from math import ceil
 import sys
+import numpy as np
 
 class Generator():
     """docstring for Generator"""
@@ -17,7 +18,7 @@ class Generator():
             # import ipdb as pdb; pdb.set_trace()
             if len(layer['input_node']) > 1 and (layer['node_type']!="Reshape"):
                 # import ipdb as pdb; pdb.set_trace()
-                print(" ==> Models with residual connections is not supported <==")
+                print(" ==> Models with residual connections are not supported <==")
                 sys.exit()
 
     # iprec: Input data precision
@@ -79,7 +80,7 @@ class Generator():
         input_shape = self.input_shape
         input_shape[0] = ceil(input_shape[0]/64)
         total_cycles = 0
-        for layer in self.model.parsed_model:
+        for layer in self.model.conv_layers:
             iShape = input_shape
             fShape = [ceil(layer['out_channels']/64), layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]
@@ -96,5 +97,58 @@ class Generator():
         print("Total countdown: {}".format(int(total_cycles)))
 
 
-    def print_mvU_param(self):
+    def print_mvu_param(self):
         pass
+
+    def int2bit(self, val, precision):
+        val_str = '{0:032b}'.format(val)
+        return list(val_str[::-1][0:precision][::-1])
+
+    def export_weigths(self):
+        weight_dict = self.__process_weigths()
+        self.__export_weigths(weight_dict)
+
+    def __export_weigths(self, dict):
+        for key, vals in dict.items():
+            file_name = "{}.hex".format(key)
+            with open(file_name, "w") as f:
+                for val in vals:
+                    f.write("{}\n".format(val))
+            f.close()
+            print("Exporting {} to {}".format(key, file_name))
+
+    def __process_weigths(self):
+        iprec,wprec,oprec = self.prec
+        # expecting input shapes is:
+        # [input_channels, output_channels, width, height]
+        weight_ram = {}
+        for layer in self.model.conv_layers:
+            layer_weights = []
+            # first we need to transpose the weight tensor into channel first format
+            # impo  rt ipdb as pdb; pdb.set_trace()
+            weights = layer['weight'].transpose(3,2,1,0)
+            # The accelerator only works with integer values
+            flatten_weights = [int(val) for val in weights.flatten()]
+            # print(flatten_weights)
+            weight_block = np.zeros([4096, wprec],dtype=str)
+            cnt = 0
+            processed = False
+            for val in flatten_weights:
+                if cnt >= 4096:
+                    cnt = 0
+                    for weight in weight_block.transpose(1,0):
+                        val_str = "".join(weight)
+                        val_str = val_str.zfill(4096)[::-1]
+                        layer_weights.append(val_str)
+                        processed = True
+                weight_block[cnt] = self.int2bit(val, wprec)
+                cnt += 1
+            if not processed:
+                # import ipdb as pdb; pdb.set_trace()
+                for weight in weight_block.transpose(1,0):
+                    val_str = "".join(weight)
+                    val_str = val_str[::-1].zfill(4096)
+                    layer_weights.append(val_str)
+            weight_ram[layer['name']] = layer_weights
+        return weight_ram
+        

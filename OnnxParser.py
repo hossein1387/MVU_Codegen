@@ -1,12 +1,14 @@
 import onnx 
 from texttable import Texttable
+import numpy as np
+from onnx.mapping import TENSOR_TYPE_TO_NP_TYPE
 
 class OnnxParser():
     """docstring for OnnxParser"""
     def __init__(self, onnx_mdoel_path):
         super(OnnxParser, self).__init__()
         self.onnx_model = onnx.load(onnx_mdoel_path)
-        self.parsed_model = []
+        self.conv_layers = []
         self.parsed_graph = []
         self.parse()
 
@@ -23,7 +25,18 @@ class OnnxParser():
                 conv_layers.append(attribs)
             layers.append(self.get_onnx_graph_attrib(node))
         self.parsed_graph = layers
-        self.parsed_model = conv_layers
+        self.conv_layers = conv_layers
+
+    def get_conv_weight(self, node):
+        for initializer in self.onnx_model.graph.initializer:
+            if node.input[1] == initializer.name:
+                dtype = TENSOR_TYPE_TO_NP_TYPE[initializer.data_type]
+                np.frombuffer(initializer.raw_data, dtype=dtype)
+                np.frombuffer(initializer.raw_data, dtype=dtype)
+                weight = np.frombuffer(initializer.raw_data, dtype=dtype).reshape(*initializer.dims) 
+                return weight, initializer.name
+        print("==> Warning: could not find weight param for {}".format(node.input['1']))
+        return None
 
     def get_onnx_conv_attrib(self, conv_node, dims):
         # import ipdb as pdb; pdb.set_trace()
@@ -35,6 +48,7 @@ class OnnxParser():
         attribs['kernel_size'] = conv_node.attribute[2].ints
         attribs['padding'] = conv_node.attribute[3].ints
         attribs['stride'] = conv_node.attribute[4].ints
+        attribs['weight'], attribs['name'] = self.get_conv_weight(conv_node)
         return attribs
 
     def get_onnx_graph_attrib(self, node):
@@ -61,7 +75,7 @@ class OnnxParser():
         t.add_row(['lay_num', 'in_channels','out_channels','kernel_size','stride','padding','dilation','groups'])
         dims = self.get_conv_dims()
         conv_num = 0
-        for layer in self.parsed_model:
+        for layer in self.conv_layers:
             t.add_row([conv_num,
                        layer['in_channels'],
                        layer['out_channels'],
