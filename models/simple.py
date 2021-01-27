@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -8,6 +9,10 @@ class SimpleConv(nn.Module):
 
         self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size, stride=stride,
                      padding=padding, groups=groups, bias=False, dilation=dilation)
+
+        # import ipdb as pdb; pdb.set_trace()
+        weights = np.asarray(range(0,in_ch*out_ch*kernel_size*kernel_size)).astype(np.float32).reshape(in_ch,out_ch,kernel_size,kernel_size)
+        self.conv1.weight.data = torch.from_numpy(weights)
 
     def forward(self, x):
         out = self.conv1(x)
