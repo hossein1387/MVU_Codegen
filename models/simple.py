@@ -7,11 +7,11 @@ class SimpleConv(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride, padding, groups, dilation):
         super(SimpleConv, self).__init__()
 
+        # import ipdb as pdb; pdb.set_trace()
         self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size, stride=stride,
                      padding=padding, groups=groups, bias=False, dilation=dilation)
 
-        # import ipdb as pdb; pdb.set_trace()
-        weights = np.asarray(range(0,in_ch*out_ch*kernel_size*kernel_size)).astype(np.float32).reshape(in_ch,out_ch,kernel_size,kernel_size)
+        weights = np.asarray(range(0,in_ch*out_ch*kernel_size*kernel_size)).astype(np.float32).reshape(out_ch, in_ch,kernel_size,kernel_size)
         self.conv1.weight.data = torch.from_numpy(weights)
 
     def forward(self, x):
@@ -34,15 +34,15 @@ def export_torch_to_onnx(model, batch_size, nb_channels, w, h):
         return
 
 if __name__ == '__main__':
-    input_size = 10
-    in_ch = 2
-    out_ch= 2
+    input_size = 32
+    in_ch = 3
+    out_ch= 64
     kernel_size = 3
     stride = 1
-    padding = 0
+    padding = 1
     groups = 1
     dilation = 1
-    model = SimpleConv(in_ch ,out_ch,kernel_size ,stride ,padding ,groups ,dilation)
+    model = SimpleConv(in_ch, out_ch, kernel_size, stride, padding, groups ,dilation)
     # import ipdb as pdb; pdb.set_trace()
     input_tensor = torch.randint(0,255, [1, in_ch, input_size,input_size]).type(torch.float32) 
     # print(model(input_tensor))
