@@ -41,26 +41,32 @@ class Generator():
         iC, iH, iW = iShape
         fC, fH, fW = fShape
         sW = stride 
-        ilength = [0,0,0,0]
-        ijump = [0,0,0,0]
-        wlength = [0,0,0,0]
-        wjump = [0,0,0,0]
-        ilength[0] = iC*fW-1
-        ilength[1] = fH-1
-        ilength[2] = iprec*wprec*fC-1
-        ilength[3] = 0
-        ijump[0]   = iprec*(iC*(iW-fW) + 1)
-        ijump[1]   = -iprec*(iC*(fH-1)*iW + fW*iC - 1)
-        ijump[2]   = -iprec*(iC*(fH-1)*iW + (fW-sW-1)*iC + 1)
-        ijump[3]   = ijump[2]
-        wlength[0] = iC*fW*fH-1
-        wlength[1] = iprec*wprec-1
-        wlength[2] = fC-1
-        wlength[3] = 0
-        wjump[0] = -wprec*(iC*fW*fH-1)
+        ilength = [0,0,0,0,0]
+        ijump   = [0,0,0,0,0]
+        wlength = [0,0,0,0,0]
+        wjump   = [0,0,0,0,0]
+
+        ilength[4] = 0
+        ilength[3] = iC*fW-1
+        ilength[2] = fH-1
+        ilength[1] = iprec*wprec*fC-1
+
+        ijump[4] = 0
+        ijump[3] = iprec
+        ijump[2] = iprec*(iC*(iW-fW) + 1)
+        ijump[1] = -iprec*(iC*(fH-1)*iW + fW*iC - 1)
+        ijump[0] = -iprec*(iC*(fH-1)*iW + (fW-sW-1)*iC + 1)
+
+        wlength[4] = 0
+        wlength[3] = iC*fW*fH-1
+        wlength[2] = iprec*wprec-1
+        wlength[1] = fC-1
+
+        wjump[4] = 0
+        wjump[3] = wprec
+        wjump[2] = -wprec*(iC*fW*fH-1)
         wjump[1] = wprec
-        wjump[2] = -wprec*(iC*fW*fH*fC-1)
-        wjump[3] = wjump[2]
+        wjump[0] = -wprec*(iC*fW*fH*fC-1)
         countdown = (iC * fW) * (fH) * (iprec * wprec) * (fC) * ((iW-fW+1)/sW)
         return [ilength, ijump, wlength, wjump, countdown]
 
@@ -147,7 +153,7 @@ class Generator():
                 # import ipdb as pdb; pdb.set_trace()
                 for weight in weight_block.transpose(1,0):
                     val_str = "".join(weight)
-                    val_str = val_str[::-1].zfill(4096)
+                    #val_str = val_str[::-1].zfill(4096)
                     layer_weights.append(val_str)
             weight_ram[layer['name']] = layer_weights
         return weight_ram
