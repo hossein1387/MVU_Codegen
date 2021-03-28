@@ -2,6 +2,8 @@ from texttable import Texttable
 from math import ceil
 import sys
 import numpy as np
+from utils import export_tensor
+import copy
 
 class Generator():
     """docstring for Generator"""
@@ -10,7 +12,7 @@ class Generator():
         # expecting to receive a OnnxModel parsed object
         self.model = model
         self.prec = prec
-        self.input_shape = input_shape
+        self.input_shape = copy.copy(input_shape)
 
     def check_model_is_valid(self):
         # check if there are residual connections
@@ -112,7 +114,7 @@ class Generator():
 
     def export_weigths(self):
         weight_dict = self.__process_weigths()
-        self.__export_weigths(weight_dict)
+        export_tensor(weight_dict)
 
     def __export_weigths(self, dict):
         for key, vals in dict.items():

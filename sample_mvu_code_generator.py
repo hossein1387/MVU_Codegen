@@ -1,6 +1,8 @@
+import logging
 import argparse
 from OnnxParser import OnnxParser
 from Generator import Generator
+import utils
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -14,18 +16,19 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    model = OnnxParser(args['onnx_model'])
+    model_path = args['onnx_model']
+    precision = [args['aprec'], args['wprec'], args['oprec']]
+    input_shape = args['input_shape']
+    model = OnnxParser(model_path)
 
     # model.print_onnx_graph()
     # model.print_onnx_model()
-    precision = [args['aprec'], args['wprec'], args['oprec']]
-    # # import ipdb as pdb; pdb.set_trace()
     if len(args['input_shape'])>3:
         print("Expecting an input array of shape: [channels, height, lenghth]")
         import sys
         sys.exit()
-    input_shape = args['input_shape']
     generator = Generator(model, precision, input_shape)
     generator.generate_mvu_configs()
     generator.export_weigths()
-
+    # import ipdb as pdb; pdb.set_trace()
+    utils.gen_test_vecs(model_path, precision, input_shape)
