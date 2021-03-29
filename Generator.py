@@ -21,6 +21,7 @@ class Generator():
             if len(layer['input_node']) > 1 and (layer['node_type']!="Reshape"):
                 # import ipdb as pdb; pdb.set_trace()
                 print(" ==> Models with residual connections are not supported <==")
+                print(" ==>                      :(                            <==")
                 sys.exit()
 
     # iprec: Input data precision
@@ -133,7 +134,7 @@ class Generator():
         for layer in self.model.conv_layers:
             layer_weights = []
             # first we need to transpose the weight tensor into channel first format
-            # impo  rt ipdb as pdb; pdb.set_trace()
+            # import ipdb as pdb; pdb.set_trace()
             weights = layer['weight'].transpose(3,2,1,0)
             # The accelerator only works with integer values
             flatten_weights = [int(val) for val in weights.flatten()]
@@ -141,16 +142,19 @@ class Generator():
             weight_block = np.zeros([4096, wprec],dtype=str)
             cnt = 0
             processed = False
-            for val in flatten_weights:
-                if cnt >= 4096:
+            # Now we need to transpose the weight tensor into MVU format.
+            for idx, val in enumerate(flatten_weights):
+                if cnt >= 4096 or idx==(len(flatten_weights)-1):
                     cnt = 0
                     for weight in weight_block.transpose(1,0):
+                        # import ipdb as pdb; pdb.set_trace()
                         val_str = "".join(weight)
                         val_str = val_str.zfill(4096)[::-1]
                         layer_weights.append(val_str)
                         processed = True
                 weight_block[cnt] = self.int2bit(val, wprec)
                 cnt += 1
+            # import ipdb as pdb; pdb.set_trace()
             if not processed:
                 # import ipdb as pdb; pdb.set_trace()
                 for weight in weight_block.transpose(1,0):
