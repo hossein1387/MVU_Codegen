@@ -39,7 +39,7 @@ class Generator():
     # Pt   : Zero-padding in on the top in the height dimension
     # Pb   : Zero-padding in on the bottom in the height dimension
 
-    def get_mvu_param(self, prec, iShape, fShape, stride):
+    def get_mvu_param(self, prec, iShape, fShape, stride, layerType):
         iprec,wprec,oprec = prec
         iC, iH, iW = iShape
         fC, fH, fW = fShape
@@ -49,36 +49,69 @@ class Generator():
         wlength = [0,0,0,0,0]
         wjump   = [0,0,0,0,0]
 
-        ilength[4] = 0
-        ilength[3] = iC*fW-1
-        ilength[2] = fH-1
-        ilength[1] = iprec*wprec*fC-1
+        if layerType == "conv":
+            ilength[4] = 0
+            ilength[3] = iC*fW-1
+            ilength[2] = fH-1
+            ilength[1] = iprec*wprec*fC-1
 
-        ijump[4] = 0
-        ijump[3] = iprec
-        ijump[2] = iprec*(iC*(iW-fW) + 1)
-        ijump[1] = -iprec*(iC*(fH-1)*iW + fW*iC - 1)
-        ijump[0] = -iprec*(iC*(fH-1)*iW + (fW-sW-1)*iC + 1)
+            ijump[4] = 0
+            ijump[3] = iprec
+            ijump[2] = iprec*(iC*(iW-fW) + 1)
+            ijump[1] = -iprec*(iC*(fH-1)*iW + fW*iC - 1)
+            ijump[0] = -iprec*(iC*(fH-1)*iW + (fW-sW-1)*iC + 1)
 
-        wlength[4] = 0
-        wlength[3] = iC*fW*fH-1
-        wlength[2] = iprec*wprec-1
-        wlength[1] = fC-1
+            wlength[4] = 0
+            wlength[3] = iC*fW*fH-1
+            wlength[2] = iprec*wprec-1
+            wlength[1] = fC-1
 
-        wjump[4] = 0
-        wjump[3] = wprec
-        wjump[2] = -wprec*(iC*fW*fH-1)
-        wjump[1] = wprec
-        wjump[0] = -wprec*(iC*fW*fH*fC-1)
-        countdown = (iC * fW) * (fH) * (iprec * wprec) * (fC) * ((iW-fW+1)/sW)
-        return [ilength, ijump, wlength, wjump, countdown]
+            wjump[4] = 0
+            wjump[3] = wprec
+            wjump[2] = -wprec*(iC*fW*fH-1)
+            wjump[1] = wprec
+            wjump[0] = -wprec*(iC*fW*fH*fC-1)
+            countdown = (iC * fW) * (fH) * (iprec * wprec) * (fC) * ((iW-fW+1)/sW)
+            
+        elif layerType == "matmul":
+            m_h = ceil(iH/64)
+            m_w = ceil(iW/64)
+            ilength[4] = 0
+            ilength[3] = 0
+            ilength[2] = 0
+            ilength[1] = m_h-1
 
-    def infer_activation_shape(self, input, kernel, padding, stride):
-        iC, iH, iW = input
-        fC, fH, fW = kernel
-        oH=int((iH-fH+2*padding)/stride)+1
-        oW=int((iW-fW+2*padding)/stride)+1
-        oC=fC
+            ijump[4] = 0
+            ijump[3] = 0
+            ijump[2] = 0
+            ijump[1] = iprec
+            ijump[0] = -iprec*(m_w-1)
+
+            wlength[4] = 0
+            wlength[3] = 0
+            wlength[2] = m_w-1
+            wlength[1] = wprec*iprec-1
+
+            wjump[4] = 0
+            wjump[3] = 0
+            wjump[2] = wprec
+            wjump[1] = -wprec*(m_w-1)
+            wjump[0] = wprec
+
+            countdown = m_w * m_h * iprec * wprec;
+
+        return [ilength, ijump, wlength, wjump, countdown] 
+
+    def infer_activation_shape(self, input, kernel, padding, stride, layerTpye):
+        oC, oH, oW = [0, 0, 0]
+        if layerTpye == "conv":
+            iC, iH, iW = input
+            fC, fH, fW = kernel
+            oH=int((iH-fH+2*padding)/stride)+1
+            oW=int((iW-fW+2*padding)/stride)+1
+            oC=fC
+        elif layerTpye == "matmul":
+            pass
         return [oC, oH, oW]
 
     def generate_mvu_configs(self):
@@ -89,17 +122,22 @@ class Generator():
         input_shape = self.input_shape
         input_shape[0] = ceil(input_shape[0]/64)
         total_cycles = 0
-        for layer in self.model.conv_layers:
+        for layer in self.model.layers:
+            layer_type = layer['layer_type']
             iShape = input_shape
             fShape = [ceil(layer['out_channels']/64), layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]
             padding = layer['padding'][0]
             prec = self.prec
             # print("{} * {}".format(iShape, fShape))
-            ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride)
-            total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
+            ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride, layer_type)
+            if layer_type == "conv":
+                total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
+            elif layer_type == "matmul":
+                total_layer_countdown = countdown
+            # import ipdb as pdb; pdb.set_trace()
             t.add_row([iShape, fShape, ilength, ijump, wlength, wjump, countdown, total_layer_countdown])
-            input_shape = self.infer_activation_shape(input_shape, fShape, padding, stride)
+            input_shape = self.infer_activation_shape(input_shape, fShape, padding, stride, layer_type)
             total_cycles += total_layer_countdown
         print("\nGenerated MVU configuration:")
         print(t.draw())
@@ -131,11 +169,15 @@ class Generator():
         # expecting input shapes is:
         # [input_channels, output_channels, width, height]
         weight_ram = {}
-        for layer in self.model.conv_layers:
+        for layer in self.model.layers:
             layer_weights = []
+            layer_type = layer['layer_type']
             # first we need to transpose the weight tensor into channel first format
             # import ipdb as pdb; pdb.set_trace()
-            weights = layer['weight'].transpose(3,2,1,0)
+            if layer_type == "conv":
+                weights = layer['weight'].transpose(3,2,1,0)
+            elif layer_type == "matmul":
+                weights = layer['weight']
             # The accelerator only works with integer values
             flatten_weights = [int(val) for val in weights.flatten()]
             # print(flatten_weights)

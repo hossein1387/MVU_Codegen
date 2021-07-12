@@ -8,7 +8,8 @@ class OnnxParser():
     def __init__(self, onnx_mdoel_path):
         super(OnnxParser, self).__init__()
         self.onnx_model = onnx.load(onnx_mdoel_path)
-        self.conv_layers = []
+        self.layers = []
+        # self.matmul_layers = []
         self.parsed_graph = []
         self.parse()
 
@@ -16,18 +17,23 @@ class OnnxParser():
     def parse(self):
         dims = self.get_conv_dims()
         conv_num = 0
-        conv_layers = []
         layers = []
+        matmul_layers = []
+        graph = []
         for node in self.onnx_model.graph.node:
             if node.op_type.lower() == "conv":
                 # import ipdb as pdb; pdb.set_trace()
                 attribs = self.get_onnx_conv_attrib(node, dims)
-                conv_layers.append(attribs)
-            layers.append(self.get_onnx_graph_attrib(node))
-        self.parsed_graph = layers
-        self.conv_layers = conv_layers
+            elif node.op_type.lower() == "gemm" or node.op_type.lower() == "matmul":
+                attribs = self.get_onnx_matmul_attrib(node, dims)
+                matmul_layers.append(attribs)
+            layers.append(attribs)
+            graph.append(self.get_onnx_graph_attrib(node))
 
-    def get_conv_weight(self, node):
+        self.parsed_graph = graph
+        self.layers = layers
+
+    def get_node_weight(self, node):
         for initializer in self.onnx_model.graph.initializer:
             if node.input[1] == initializer.name:
                 dtype = TENSOR_TYPE_TO_NP_TYPE[initializer.data_type]
@@ -41,6 +47,7 @@ class OnnxParser():
     def get_onnx_conv_attrib(self, conv_node, dims):
         # import ipdb as pdb; pdb.set_trace()
         attribs = {}
+        attribs['layer_type'] = "conv"
         attribs['in_channels'] = dims[conv_node.input[1]][1]
         attribs['out_channels'] = dims[conv_node.input[1]][0]
         attribs['dilation'] = conv_node.attribute[0].ints
@@ -48,8 +55,22 @@ class OnnxParser():
         attribs['kernel_size'] = conv_node.attribute[2].ints
         attribs['padding'] = conv_node.attribute[3].ints
         attribs['stride'] = conv_node.attribute[4].ints
-        attribs['weight'], attribs['name'] = self.get_conv_weight(conv_node)
+        attribs['weight'], attribs['name'] = self.get_node_weight(conv_node)
         return attribs
+
+    def get_onnx_matmul_attrib(self, matmul_node, dims):
+        attribs = {}
+        attribs['layer_type'] = "matmul"
+        attribs['in_channels'] = dims[matmul_node.input[1]][1]
+        attribs['out_channels'] = dims[matmul_node.input[1]][0]
+        attribs['dilation'] = "N/A"
+        attribs['groups'] = "N/A"
+        attribs['padding'] = "N/A"
+        attribs['stride'] = "N/A"
+        attribs['weight'], attribs['name'] = self.get_node_weight(matmul_node)
+        attribs['kernel_size'] = attribs['weight'].shape
+        return attribs
+
 
     def get_onnx_graph_attrib(self, node):
         attribs = {}
@@ -72,11 +93,12 @@ class OnnxParser():
 
     def print_onnx_model(self):
         t = Texttable(max_width=180)
-        t.add_row(['lay_num', 'in_channels','out_channels','kernel_size','stride','padding','dilation','groups'])
+        t.add_row(['lay_num', 'type', 'in_channels','out_channels','kernel_size','stride','padding','dilation','groups'])
         dims = self.get_conv_dims()
-        conv_num = 0
-        for layer in self.conv_layers:
-            t.add_row([conv_num,
+        lay_num = 0
+        for layer in self.layers:
+            t.add_row([lay_num,
+                       layer['layer_type'],
                        layer['in_channels'],
                        layer['out_channels'],
                        layer['kernel_size'],
@@ -84,8 +106,8 @@ class OnnxParser():
                        layer['padding'],
                        layer['dilation'],
                        layer['groups']])
-            conv_num += 1
-        print("Conv2D Configurations:")
+            lay_num += 1
+        print("Onnx Model Configurations:")
         print(t.draw())
 
     def print_onnx_graph(self):
