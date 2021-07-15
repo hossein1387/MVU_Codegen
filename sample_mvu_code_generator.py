@@ -31,4 +31,4 @@ if __name__ == '__main__':
     generator.generate_mvu_configs()
     generator.export_weigths()
     # import ipdb as pdb; pdb.set_trace()
-    utils.gen_test_vecs(model_path, precision, input_shape)
+    # utils.gen_test_vecs(model_path, precision, input_shape)

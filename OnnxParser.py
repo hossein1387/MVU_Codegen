@@ -8,6 +8,7 @@ class OnnxParser():
     def __init__(self, onnx_mdoel_path):
         super(OnnxParser, self).__init__()
         self.onnx_model = onnx.load(onnx_mdoel_path)
+        self.model_name = onnx_mdoel_path.split("/")[-1].split(".")[0]
         self.layers = []
         # self.matmul_layers = []
         self.parsed_graph = []
@@ -18,7 +19,6 @@ class OnnxParser():
         dims = self.get_conv_dims()
         conv_num = 0
         layers = []
-        matmul_layers = []
         graph = []
         for node in self.onnx_model.graph.node:
             if node.op_type.lower() == "conv":
@@ -26,12 +26,11 @@ class OnnxParser():
                 attribs = self.get_onnx_conv_attrib(node, dims)
             elif node.op_type.lower() == "gemm" or node.op_type.lower() == "matmul":
                 attribs = self.get_onnx_matmul_attrib(node, dims)
-                matmul_layers.append(attribs)
-            layers.append(attribs)
+            self.layers.append(attribs)
+            print(attribs['layer_name'])
             graph.append(self.get_onnx_graph_attrib(node))
 
         self.parsed_graph = graph
-        self.layers = layers
 
     def get_node_weight(self, node):
         for initializer in self.onnx_model.graph.initializer:
@@ -47,6 +46,10 @@ class OnnxParser():
     def get_onnx_conv_attrib(self, conv_node, dims):
         # import ipdb as pdb; pdb.set_trace()
         attribs = {}
+        if conv_node.name == "":
+            attribs['layer_name'] = "Conv_{}".format(len(self.layers))
+        else:
+            attribs['layer_name'] = conv_node.name
         attribs['layer_type'] = "conv"
         attribs['in_channels'] = dims[conv_node.input[1]][1]
         attribs['out_channels'] = dims[conv_node.input[1]][0]
@@ -59,7 +62,12 @@ class OnnxParser():
         return attribs
 
     def get_onnx_matmul_attrib(self, matmul_node, dims):
+        # import ipdb as pdb; pdb.set_trace()
         attribs = {}
+        if matmul_node.name == "":
+            attribs['layer_name'] = "Conv_{}".format(len(self.layers))
+        else:
+            attribs['layer_name'] = matmul_node.name
         attribs['layer_type'] = "matmul"
         attribs['in_channels'] = dims[matmul_node.input[1]][1]
         attribs['out_channels'] = dims[matmul_node.input[1]][0]

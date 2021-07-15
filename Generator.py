@@ -4,15 +4,19 @@ import sys
 import numpy as np
 from utils import export_tensor
 import copy
+from collections import OrderedDict
 
 class Generator():
     """docstring for Generator"""
-    def __init__(self, model, prec, input_shape):
+    def __init__(self, model, prec, input_shape, imem=0, wmem=0, omem=int(hex(400),16), quantIdx=10, temp_riscv_code_file="template.S"):
         super(Generator, self).__init__()
         # expecting to receive a OnnxModel parsed object
         self.model = model
         self.prec = prec
         self.input_shape = copy.copy(input_shape)
+        self.temp_riscv_code_file = temp_riscv_code_file
+        self.meminfo = [imem, wmem, omem]
+        self.quantIdx = quantIdx
 
     def check_model_is_valid(self):
         # check if there are residual connections
@@ -114,6 +118,123 @@ class Generator():
             pass
         return [oC, oH, oW]
 
+    def _get_riscv_csr_code(self, ilength, ijump, wlength, wjump, countdown, olength, func_name, prec, meminfo, quantIdx):
+        iprec,wprec,oprec = prec
+        imem, wmem, omem  = meminfo
+
+        def gen_csr_instr(csr, val):
+            # risc-v immediate CSRs are small and can take values from 0-31. 
+            # here we check if the absolute csr value is larger than 31. If so,
+            # use regular immediate instructions to load the value into general
+            # registers and then load them into csr with csrw instruction. If not,
+            # then that can be handeled with a simple csrwi instruciton.
+            val = int(val)
+            if abs(val)>((2**5)-1):
+                _temp_str = ""
+                _temp_str += "\taddi t1, {}\n".format(val)
+                _temp_str += "\tcsrw {} , t1\n".format(csr)
+                return _temp_str
+            else:
+                if val >= 0:
+                    return "\tcsrwi {0}, {1}\n".format(csr, val)
+                else:
+                    return "\tcsrwi {0}, {1}\n".format(csr, slice_val(val, 5))
+
+        # 32 bit negative numbers are represented as 5 bit integer values,
+        # it is like slicing the value in binary with 5 bits.
+        def slice_val(val, bits):
+            def int2bin(integer, digits):
+                if integer >= 0:
+                    return bin(integer)[2:].zfill(digits)
+                else:
+                    return bin(2**digits + integer)[2:]
+            str_bin = int2bin(val, bits)
+            return int(str_bin[0:bits], 2)
+        code_str = ""
+
+        code_str += gen_csr_instr("mvuquant", quantIdx)
+        code_str += gen_csr_instr("mvuwbaseptr", wmem)
+        code_str += gen_csr_instr("mvuibaseptr", imem)
+        code_str += gen_csr_instr("mvuobaseptr", omem)
+
+        code_str += "\taddi  t1, x0, 0\n"
+        code_str += "\taddi  t2, x0, {}\n".format(wprec)
+        code_str += "\tadd   t1, t1, t2\n"
+        code_str += "\taddi  t2, x0, {}\n".format(iprec)
+        code_str += "\tslli  t3, t2, 6\n"
+        code_str += "\tadd   t1, t1, t3\n"
+        code_str += "\taddi  t2, x0, {}\n".format(oprec)
+        code_str += "\tslli  t3, t2, 12\n"
+        code_str += "\tadd   t1, t1, t3\n"
+        code_str += "\tcsrw  mvuprecision,  t1\n"
+
+        code_str += gen_csr_instr("mvuwjump_0", wjump[0])
+        code_str += gen_csr_instr("mvuwjump_1", wjump[1])
+        code_str += gen_csr_instr("mvuwjump_2", wjump[2])
+        code_str += gen_csr_instr("mvuwjump_3", wjump[3])
+        
+        code_str += gen_csr_instr("mvuijump_0", ijump[0])
+        code_str += gen_csr_instr("mvuijump_1", ijump[1])
+        code_str += gen_csr_instr("mvuijump_2", ijump[2])
+        code_str += gen_csr_instr("mvuijump_3", ijump[3])
+
+        code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_0", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_1", 0)
+
+        code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_0", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_1", 0)
+
+        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_0", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_1", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_2", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_3", 0)
+        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_4", 0)
+
+        code_str += gen_csr_instr("mvuwlength_1", wlength[1])
+        code_str += gen_csr_instr("mvuwlength_2", wlength[2])
+        code_str += gen_csr_instr("mvuwlength_3", wlength[3])
+        code_str += gen_csr_instr("mvuwlength_4", wlength[4])
+
+        code_str += gen_csr_instr("mvuilength_1", ilength[1])
+        code_str += gen_csr_instr("mvuilength_2", ilength[2])
+        code_str += gen_csr_instr("mvuilength_3", ilength[3])
+        code_str += gen_csr_instr("mvuilength_4", ilength[4])
+
+        code_str += gen_csr_instr("mvuolength_1", ilength[1])
+        code_str += gen_csr_instr("mvuolength_2", ilength[2])
+        code_str += gen_csr_instr("mvuolength_3", ilength[3])
+        code_str += gen_csr_instr("mvuolength_4", ilength[4])
+
+        code_str += "\taddi t1, x0, 1\n"
+        code_str += "\tslli t1, t1, 30\n"
+        code_str += "\taddi t1, t1, {}\n".format(int(countdown))
+        code_str += "\tcsrw mvucommand, t1\n"
+        code_str += "\tret\n"
+
+        return code_str
+
+    def __gen__riscv_code(self, model, _func_dict):
+        temp_str = ""
+        with open(self.temp_riscv_code_file, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                if "--> FUNCCALL <--" in line:
+                    for key, value in _func_dict.items():
+                        temp_str += "jal sp, {}\n".format(key)
+                        temp_str += "jal t3, wait_for_mvu_irq\n"
+                elif "--> HERE <--" in line:
+                    for key, value in _func_dict.items():
+                        temp_str += "{}:\n".format(key)
+                        temp_str += "{}\n".format(value)
+                else:
+                    temp_str += line
+            f.close()
+        output_file = "{}.S".format(model.model_name)
+        with open(output_file, 'w') as f:
+            f.write(temp_str)
+            f.close()
+        print("Generated kernel code is written to {}".format(output_file))
+
     def generate_mvu_configs(self):
         self.check_model_is_valid()
         t = Texttable(max_width=160)
@@ -122,15 +243,21 @@ class Generator():
         input_shape = self.input_shape
         input_shape[0] = ceil(input_shape[0]/64)
         total_cycles = 0
+        _func_dict = OrderedDict()
         for layer in self.model.layers:
+            _code_str = ""
             layer_type = layer['layer_type']
+            layer_name = layer['layer_name']
             iShape = input_shape
             fShape = [ceil(layer['out_channels']/64), layer['kernel_size'][0], layer['kernel_size'][1]]
             stride = layer['stride'][0]
             padding = layer['padding'][0]
             prec = self.prec
             # print("{} * {}".format(iShape, fShape))
+            # import ipdb as pdb; pdb.set_trace()
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride, layer_type)
+            _code_str += self._get_riscv_csr_code(ilength, ijump, wlength, wjump, countdown, [0,1,0,0,0], layer_name, self.prec, self.meminfo, self.quantIdx)
+            _func_dict[layer_name] = _code_str
             if layer_type == "conv":
                 total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
             elif layer_type == "matmul":
@@ -139,6 +266,7 @@ class Generator():
             t.add_row([iShape, fShape, ilength, ijump, wlength, wjump, countdown, total_layer_countdown])
             input_shape = self.infer_activation_shape(input_shape, fShape, padding, stride, layer_type)
             total_cycles += total_layer_countdown
+        self.__gen__riscv_code(self.model, _func_dict)
         print("\nGenerated MVU configuration:")
         print(t.draw())
         print("Total countdown: {}".format(int(total_cycles)))
