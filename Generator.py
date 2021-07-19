@@ -6,16 +6,29 @@ from utils import export_tensor
 import copy
 from collections import OrderedDict
 
+class MVUConfig():
+    def __init__(self, prec, meminfo, quantIdx, ilength, ijump, wlength, wjump, countdown, olength):
+        super(MVUConfig, self).__init__()
+        self.prec = prec
+        self.meminfo = meminfo
+        self.quantIdx = quantIdx
+        self.ilength = ilength
+        self.ijump = ijump
+        self.wlength = wlength
+        self.wjump = wjump
+        self.countdown = countdown
+        self.olength = olength
+
 class Generator():
     """docstring for Generator"""
-    def __init__(self, model, prec, input_shape, imem=0, wmem=0, omem=int(hex(400),16), quantIdx=10, temp_riscv_code_file="template.S"):
+    def __init__(self, model, prec, input_shape, meminfo, quantIdx=10, temp_riscv_code_file="template.S"):
         super(Generator, self).__init__()
         # expecting to receive a OnnxModel parsed object
         self.model = model
         self.prec = prec
         self.input_shape = copy.copy(input_shape)
         self.temp_riscv_code_file = temp_riscv_code_file
-        self.meminfo = [imem, wmem, omem]
+        self.meminfo = meminfo
         self.quantIdx = quantIdx
 
     def check_model_is_valid(self):
@@ -78,8 +91,8 @@ class Generator():
             countdown = (iC * fW) * (fH) * (iprec * wprec) * (fC) * ((iW-fW+1)/sW)
             
         elif layerType == "matmul":
-            m_h = ceil(iH/64)
-            m_w = ceil(iW/64)
+            m_h = ceil(fH/64)
+            m_w = ceil(fW/64)
             ilength[4] = 0
             ilength[3] = 0
             ilength[2] = 0
@@ -118,9 +131,9 @@ class Generator():
             pass
         return [oC, oH, oW]
 
-    def _get_riscv_csr_code(self, ilength, ijump, wlength, wjump, countdown, olength, func_name, prec, meminfo, quantIdx):
-        iprec,wprec,oprec = prec
-        imem, wmem, omem  = meminfo
+    def _get_riscv_csr_code(self, mvuConfig, layer_type):
+        iprec,wprec,oprec = mvuConfig.prec
+        imem, wmem, omem  = mvuConfig.meminfo
 
         def gen_csr_instr(csr, val):
             # risc-v immediate CSRs are small and can take values from 0-31. 
@@ -151,65 +164,65 @@ class Generator():
             str_bin = int2bin(val, bits)
             return int(str_bin[0:bits], 2)
         code_str = ""
+        if layer_type == "marmul":
+            code_str += gen_csr_instr("mvuquant", mvuConfig.quantIdx)
+            code_str += gen_csr_instr("mvuwbaseptr", wmem)
+            code_str += gen_csr_instr("mvuibaseptr", imem)
+            code_str += gen_csr_instr("mvuobaseptr", omem)
 
-        code_str += gen_csr_instr("mvuquant", quantIdx)
-        code_str += gen_csr_instr("mvuwbaseptr", wmem)
-        code_str += gen_csr_instr("mvuibaseptr", imem)
-        code_str += gen_csr_instr("mvuobaseptr", omem)
+            code_str += "\taddi  t1, x0, 0\n"
+            code_str += "\taddi  t2, x0, {}\n".format(wprec)
+            code_str += "\tadd   t1, t1, t2\n"
+            code_str += "\taddi  t2, x0, {}\n".format(iprec)
+            code_str += "\tslli  t3, t2, 6\n"
+            code_str += "\tadd   t1, t1, t3\n"
+            code_str += "\taddi  t2, x0, {}\n".format(oprec)
+            code_str += "\tslli  t3, t2, 12\n"
+            code_str += "\tadd   t1, t1, t3\n"
+            code_str += "\tcsrw  mvuprecision,  t1\n"
 
-        code_str += "\taddi  t1, x0, 0\n"
-        code_str += "\taddi  t2, x0, {}\n".format(wprec)
-        code_str += "\tadd   t1, t1, t2\n"
-        code_str += "\taddi  t2, x0, {}\n".format(iprec)
-        code_str += "\tslli  t3, t2, 6\n"
-        code_str += "\tadd   t1, t1, t3\n"
-        code_str += "\taddi  t2, x0, {}\n".format(oprec)
-        code_str += "\tslli  t3, t2, 12\n"
-        code_str += "\tadd   t1, t1, t3\n"
-        code_str += "\tcsrw  mvuprecision,  t1\n"
+            code_str += gen_csr_instr("mvuwjump_0", mvuConfig.wjump[0])
+            code_str += gen_csr_instr("mvuwjump_1", mvuConfig.wjump[1])
+            code_str += gen_csr_instr("mvuwjump_2", mvuConfig.wjump[2])
+            code_str += gen_csr_instr("mvuwjump_3", mvuConfig.wjump[3])
+            
+            code_str += gen_csr_instr("mvuijump_0", mvuConfig.ijump[0])
+            code_str += gen_csr_instr("mvuijump_1", mvuConfig.ijump[1])
+            code_str += gen_csr_instr("mvuijump_2", mvuConfig.ijump[2])
+            code_str += gen_csr_instr("mvuijump_3", mvuConfig.ijump[3])
 
-        code_str += gen_csr_instr("mvuwjump_0", wjump[0])
-        code_str += gen_csr_instr("mvuwjump_1", wjump[1])
-        code_str += gen_csr_instr("mvuwjump_2", wjump[2])
-        code_str += gen_csr_instr("mvuwjump_3", wjump[3])
-        
-        code_str += gen_csr_instr("mvuijump_0", ijump[0])
-        code_str += gen_csr_instr("mvuijump_1", ijump[1])
-        code_str += gen_csr_instr("mvuijump_2", ijump[2])
-        code_str += gen_csr_instr("mvuijump_3", ijump[3])
+            code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_0", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_1", 0)
 
-        code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_0", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvusjump_1", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_0", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_1", 0)
 
-        code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_0", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvubjump_1", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_0", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_1", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_2", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_3", 0)
+            code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_4", 0)
 
-        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_0", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_1", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_2", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_3", 0)
-        code_str += "\tcsrwi {0}, {1}\n".format("mvuojump_4", 0)
+            code_str += gen_csr_instr("mvuwlength_1", mvuConfig.wlength[1])
+            code_str += gen_csr_instr("mvuwlength_2", mvuConfig.wlength[2])
+            code_str += gen_csr_instr("mvuwlength_3", mvuConfig.wlength[3])
+            code_str += gen_csr_instr("mvuwlength_4", mvuConfig.wlength[4])
 
-        code_str += gen_csr_instr("mvuwlength_1", wlength[1])
-        code_str += gen_csr_instr("mvuwlength_2", wlength[2])
-        code_str += gen_csr_instr("mvuwlength_3", wlength[3])
-        code_str += gen_csr_instr("mvuwlength_4", wlength[4])
+            code_str += gen_csr_instr("mvuilength_1", mvuConfig.ilength[1])
+            code_str += gen_csr_instr("mvuilength_2", mvuConfig.ilength[2])
+            code_str += gen_csr_instr("mvuilength_3", mvuConfig.ilength[3])
+            code_str += gen_csr_instr("mvuilength_4", mvuConfig.ilength[4])
 
-        code_str += gen_csr_instr("mvuilength_1", ilength[1])
-        code_str += gen_csr_instr("mvuilength_2", ilength[2])
-        code_str += gen_csr_instr("mvuilength_3", ilength[3])
-        code_str += gen_csr_instr("mvuilength_4", ilength[4])
+            code_str += gen_csr_instr("mvuolength_1", mvuConfig.ilength[1])
+            code_str += gen_csr_instr("mvuolength_2", mvuConfig.ilength[2])
+            code_str += gen_csr_instr("mvuolength_3", mvuConfig.ilength[3])
+            code_str += gen_csr_instr("mvuolength_4", mvuConfig.ilength[4])
 
-        code_str += gen_csr_instr("mvuolength_1", ilength[1])
-        code_str += gen_csr_instr("mvuolength_2", ilength[2])
-        code_str += gen_csr_instr("mvuolength_3", ilength[3])
-        code_str += gen_csr_instr("mvuolength_4", ilength[4])
-
-        code_str += "\taddi t1, x0, 1\n"
-        code_str += "\tslli t1, t1, 30\n"
-        code_str += "\taddi t1, t1, {}\n".format(int(countdown))
-        code_str += "\tcsrw mvucommand, t1\n"
-        code_str += "\tret\n"
+            code_str += "\taddi t1, x0, 1\n"
+            code_str += "\tslli t1, t1, 30\n"
+            code_str += "\taddi t1, t1, {}\n".format(int(countdown))
+            code_str += "\tcsrw mvucommand, t1\n"
+            code_str += "\tret\n"
 
         return code_str
 
@@ -256,7 +269,9 @@ class Generator():
             # print("{} * {}".format(iShape, fShape))
             # import ipdb as pdb; pdb.set_trace()
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride, layer_type)
-            _code_str += self._get_riscv_csr_code(ilength, ijump, wlength, wjump, countdown, [0,1,0,0,0], layer_name, self.prec, self.meminfo, self.quantIdx)
+            olength = [0,1,0,0,0]
+            mvuConfig = MVUConfig(self.prec, self.meminfo, self.quantIdx, ilength, ijump, wlength, wjump, countdown, olength)
+            _code_str += self._get_riscv_csr_code(mvuConfig, layer_type)
             _func_dict[layer_name] = _code_str
             if layer_type == "conv":
                 total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
