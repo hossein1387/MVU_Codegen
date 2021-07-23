@@ -296,7 +296,9 @@ class Generator():
 
     def export_weigths(self):
         weight_dict = self.__process_weigths()
-        export_tensor(weight_dict)
+        iprec,wprec,oprec = self.prec
+        for tensor_name, tensor in weight_dict.items():
+            export_tensor(tensor, format="linear", prec=wprec, tensor_name=tensor_name)
 
     def __export_weigths(self, dict):
         for key, vals in dict.items():
