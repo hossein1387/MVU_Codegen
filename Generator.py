@@ -65,7 +65,7 @@ class Generator():
         ijump   = [0,0,0,0,0]
         wlength = [0,0,0,0,0]
         wjump   = [0,0,0,0,0]
-
+        # import ipdb as pdb; pdb.set_trace()
         if layerType == "conv":
             ilength[4] = 0
             ilength[3] = iC*fW-1
@@ -298,7 +298,7 @@ class Generator():
         weight_dict = self.__process_weigths()
         iprec,wprec,oprec = self.prec
         for tensor_name, tensor in weight_dict.items():
-            export_tensor(tensor, format="linear", prec=wprec, tensor_name=tensor_name)
+            export_tensor(tensor, format="linear", prec=wprec, tensor_name=tensor_name, numerical_system=None)
 
     def __export_weigths(self, dict):
         for key, vals in dict.items():
@@ -332,9 +332,12 @@ class Generator():
             # Now we need to transpose the weight tensor into MVU format.
             for idx, val in enumerate(flatten_weights):
                 if cnt >= 4096 or idx==(len(flatten_weights)-1):
-                    cnt = 0
-                    for weight in weight_block.transpose(1,0):
+                    if idx==(len(flatten_weights)-1):
                         # import ipdb as pdb; pdb.set_trace()
+                        weight_block[cnt] = self.int2bit(val, wprec)
+                    cnt = 0
+                    # import ipdb as pdb; pdb.set_trace()
+                    for weight in weight_block.transpose(1,0):
                         val_str = "".join(weight)
                         val_str = val_str.zfill(4096)[::-1]
                         layer_weights.append(val_str)

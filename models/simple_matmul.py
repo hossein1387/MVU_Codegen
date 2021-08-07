@@ -4,14 +4,17 @@ import torch.nn as nn
 
 class SimpleMatMul(nn.Module):
 
-    def __init__(self, in_ch, out_ch, wprec):
+    def __init__(self, in_ch, out_ch, wprec, diag=True):
         super(SimpleMatMul, self).__init__()
 
         self.linear = nn.Linear(in_ch, out_ch, bias=False)
 
-        # import ipdb as pdb; pdb.set_trace()
+        import ipdb as pdb; pdb.set_trace()
         max_int = (2**wprec) - 1 
-        w_data = np.random.randint(max_int+1, size=(in_ch*out_ch))
+        if diag:
+            w_data = np.diag(np.ones(in_ch), 0) 
+        else:
+            w_data = np.random.randint(max_int+1, size=(in_ch*out_ch))
         weights = np.asarray(w_data).astype(np.float32).reshape(out_ch, in_ch)
         self.linear.weight.data = torch.from_numpy(weights)
 
@@ -48,5 +51,5 @@ if __name__ == '__main__':
     # import ipdb as pdb; pdb.set_trace()
     # input_tensor = torch.randint(0,max_int, [1, in_ch, input_size,input_size]).type(torch.int32) 
     # # print(model(input_tensor))
-    onnx_model_fname = export_torch_to_onnx(model, 1, 1, 200, input_size, iprec)
+    onnx_model_fname = export_torch_to_onnx(model, 1, 1, 64, input_size, iprec)
     
