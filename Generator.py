@@ -322,7 +322,9 @@ class Generator():
             if layer_type == "conv":
                 weights = layer['weight'].transpose(3,2,1,0)
             elif layer_type == "matmul":
-                weights = layer['weight']
+                # import ipdb as pdb; pdb.set_trace()
+                weights = layer['weight'].transpose()
+                # weights = layer['weight']
             # The accelerator only works with integer values
             flatten_weights = [int(val) for val in weights.flatten()]
             # print(flatten_weights)
