@@ -35,7 +35,6 @@ def export_tensor(tensor, format="linear", prec=2, tensor_name=None, numerical_s
     if format == "linear":
         export_tensor_to_file(tensor, tensor_name, numerical_system, prec)
     elif format == "msb_transposed":
-        # import ipdb as pdb; pdb.set_trace()
         transposed_tensor = []
         # The accelerator only works with integer values
         flatten_tensor = [int(val) for val in tensor.flatten()]
@@ -90,7 +89,7 @@ def gen_test_vecs(model_path, precision, input_shape):
     print("Inference finised in {:4.4f} seconds".format(time))
     # import ipdb as pdb; pdb.set_trace()
     export_tensor(output[0].astype(np.int32).flatten(), format="msb_transposed", prec=oprec, tensor_name="output", numerical_system="hex")
-    export_tensor(input_tensor.astype(np.int32).flatten(), format="msb_transposed", prec=iprec, tensor_name="input", numerical_system="hex")
+    export_tensor(input_tensor.astype(np.int32).flatten(), format="msb_transposed", prec=iprec, tensor_name="input", numerical_system="bin")
 
 def gen_input_test_vectors(precision, input_shape, mode="diag"):
     np.random.seed(0)
