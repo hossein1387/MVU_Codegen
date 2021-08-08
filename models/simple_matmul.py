@@ -9,10 +9,17 @@ class SimpleMatMul(nn.Module):
 
         self.linear = nn.Linear(in_ch, out_ch, bias=False)
 
-        import ipdb as pdb; pdb.set_trace()
+        # import ipdb as pdb; pdb.set_trace()
         max_int = (2**wprec) - 1 
         if diag:
-            w_data = np.diag(np.ones(in_ch), 0) 
+            w_data = np.diag(np.ones(in_ch))
+            # w_data = np.random.randint(2, size=(in_ch*in_ch)).reshape(in_ch, in_ch)
+            # w_data = np.diag(np.zeros(in_ch), 0)
+            # pattern = np.zeros(in_ch)
+            # for i in range(0, in_ch):
+            #     pattern[i] = i%2
+            # import ipdb as pdb; pdb.set_trace()
+            # w_data[0] = pattern
         else:
             w_data = np.random.randint(max_int+1, size=(in_ch*out_ch))
         weights = np.asarray(w_data).astype(np.float32).reshape(out_ch, in_ch)
@@ -47,7 +54,7 @@ if __name__ == '__main__':
     wprec = 2
     iprec = 2
 
-    model = SimpleMatMul(in_ch, out_ch, wprec)
+    model = SimpleMatMul(in_ch, out_ch, wprec, diag=False)
     # import ipdb as pdb; pdb.set_trace()
     # input_tensor = torch.randint(0,max_int, [1, in_ch, input_size,input_size]).type(torch.int32) 
     # # print(model(input_tensor))
