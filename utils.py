@@ -85,22 +85,27 @@ def gen_test_vecs(model_path, precision, input_shape):
     # import ipdb as pdb; pdb.set_trace()
     iprec,wprec,oprec = precision
     onnxrt_engine = onnxrt.OnnxrtEngine(model_path)
-    input_tensor = gen_input_test_vectors(precision, input_shape, diag=True)
+    input_tensor = gen_input_test_vectors(precision, input_shape, mode='random')
     output, time = onnxrt_engine.run_inference(input_tensor)
     print("Inference finised in {:4.4f} seconds".format(time))
     # import ipdb as pdb; pdb.set_trace()
     export_tensor(output[0].astype(np.int32).flatten(), format="msb_transposed", prec=oprec, tensor_name="output", numerical_system="hex")
-    export_tensor(input_tensor.astype(np.int32).flatten(), format="msb_transposed", prec=iprec, tensor_name="input", numerical_system="bin")
+    export_tensor(input_tensor.astype(np.int32).flatten(), format="msb_transposed", prec=iprec, tensor_name="input", numerical_system="hex")
 
-def gen_input_test_vectors(precision, input_shape, diag):
+def gen_input_test_vectors(precision, input_shape, mode="diag"):
     np.random.seed(0)
     # import ipdb as pdb; pdb.set_trace()
     iprec,wprec,oprec = precision
     max_int = (2**iprec) - 1
-    if diag:
+    if mode == "identity":
         input_data = np.diag(np.ones(input_shape[1]), 0) 
-    else:
+    elif mode == "diag":
+        input_data = np.diag( np.random.randint(max_int+1, size=(input_shape[1])), 0) 
+    elif mode == "random":
         input_data = np.random.randint(max_int+1, size=(input_shape))
+    elif mode == "rowrandom":
+        input_data = np.zeros((input_shape[1], input_shape[1]))
+        input_data[0] = np.random.randint(max_int+1, size=(input_shape[1]))
     input_tensor = np.asarray(input_data).astype(np.float32).reshape(input_shape)
     input_tensor = np.expand_dims(input_tensor, axis=0)
     return input_tensor
