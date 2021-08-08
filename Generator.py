@@ -21,7 +21,7 @@ class MVUConfig():
 
 class Generator():
     """docstring for Generator"""
-    def __init__(self, model, prec, input_shape, meminfo, quantIdx=10, temp_riscv_code_file="template.S"):
+    def __init__(self, model, prec, input_shape, meminfo, quantIdx=2, temp_riscv_code_file="template.S"):
         super(Generator, self).__init__()
         # expecting to receive a OnnxModel parsed object
         self.model = model
@@ -30,6 +30,10 @@ class Generator():
         self.temp_riscv_code_file = temp_riscv_code_file
         self.meminfo = meminfo
         self.quantIdx = quantIdx
+        self.loop_cnt = 0
+        self.mvu_res_output_base_addr = 1024
+        self.mvu_res_input_base_addr = 0
+        self.mvu_res_weight_base_addr = 0
 
     def check_model_is_valid(self):
         # check if there are residual connections
@@ -131,7 +135,7 @@ class Generator():
             pass
         return [oC, oH, oW]
 
-    def _get_riscv_csr_code(self, mvuConfig, layer_type):
+    def _get_riscv_csr_code(self, mvuConfig, layer_type, layer_name):
         iprec,wprec,oprec = mvuConfig.prec
         imem, wmem, omem  = mvuConfig.meminfo
 
@@ -164,12 +168,21 @@ class Generator():
             str_bin = int2bin(val, bits)
             return int(str_bin[0:bits], 2)
         code_str = ""
-        if layer_type == "marmul":
-            code_str += gen_csr_instr("mvuquant", mvuConfig.quantIdx)
-            code_str += gen_csr_instr("mvuwbaseptr", wmem)
-            code_str += gen_csr_instr("mvuibaseptr", imem)
-            code_str += gen_csr_instr("mvuobaseptr", omem)
+        if layer_type == "matmul":
+            # Matmul compute structure code
+            code_str += "{}:\n".format(layer_name)
+            code_str += "\taddi sp, sp, -4\n"
+            code_str += "\tsw ra, 4(sp)\n"
+            code_str += "\tjal {}_init\n".format(layer_name)
+            code_str += "\tjal {}_loop\n".format(layer_name)
+            code_str += "\tlw ra, 4(sp)\n"
+            code_str += "\taddi sp, sp, 4\n"
+            code_str += "\tret\n"
 
+            # Matmul initialization code
+            code_str += "{}_init:\n".format(layer_name)
+            code_str += "\taddi sp, sp, -4\n"
+            code_str += "\tsw ra, 4(sp)\n"
             code_str += "\taddi  t1, x0, 0\n"
             code_str += "\taddi  t2, x0, {}\n".format(wprec)
             code_str += "\tadd   t1, t1, t2\n"
@@ -218,11 +231,39 @@ class Generator():
             code_str += gen_csr_instr("mvuolength_3", mvuConfig.ilength[3])
             code_str += gen_csr_instr("mvuolength_4", mvuConfig.ilength[4])
 
-            code_str += "\taddi t1, x0, 1\n"
-            code_str += "\tslli t1, t1, 30\n"
-            code_str += "\taddi t1, t1, {}\n".format(int(countdown))
-            code_str += "\tcsrw mvucommand, t1\n"
+            code_str += "\tlw ra, 4(sp)\n"
+            code_str += "\taddi sp, sp, 4\n"
             code_str += "\tret\n"
+            
+            # Matmul loop code
+            # loop init:
+            code_str += "{}_loop:\n".format(layer_name)
+            code_str += "\taddi sp, sp, -4\n"
+            code_str += "\tsw ra, 4(sp)\n"
+            code_str += "\taddi s0, x0, 64\n"
+            code_str += "\tli s1, {}\n".format(self.mvu_res_output_base_addr)
+            code_str += "\tli s2, {}\n".format(self.mvu_res_weight_base_addr)
+            code_str += "\tli s3, {}\n".format(self.mvu_res_input_base_addr)
+            code_str += "\taddi s4, x0, 1\n"
+            code_str += "\tslli s4, s4, 30\n"
+            code_str += "\taddi s4, s4, {}\n".format(int(mvuConfig.countdown))
+            # loop anchor:
+            code_str += "loop_{}:\n".format(self.loop_cnt)
+            code_str += gen_csr_instr("mvuquant", oprec-1)
+            code_str += "\tcsrw mvuwbaseptr, s2\n"
+            code_str += "\tcsrw mvuibaseptr, s3\n"
+            code_str += "\tcsrw mvuobaseptr, s1\n"
+            code_str += "\tcsrw mvucommand, s4\n"
+            code_str += "\tjal wait_for_mvu_irq\n"
+            code_str += "\taddi s0,s0, -1\n"
+            code_str += "\taddi s1, s1, {}\n".format(oprec)
+            code_str += "\taddi s3, s3, {}\n".format(iprec)
+            code_str += "\tbne s0, x0, loop_{}\n".format(self.loop_cnt)
+            code_str += "\tlw ra, 4(sp)\n"
+            code_str += "\taddi sp, sp, 4\n"
+            code_str += "\tret\n"
+
+            self.loop_cnt += 1
 
         return code_str
 
@@ -233,11 +274,9 @@ class Generator():
             for line in lines:
                 if "--> FUNCCALL <--" in line:
                     for key, value in _func_dict.items():
-                        temp_str += "jal sp, {}\n".format(key)
-                        temp_str += "jal t3, wait_for_mvu_irq\n"
+                        temp_str += "\tjal {}\n".format(key)
                 elif "--> HERE <--" in line:
                     for key, value in _func_dict.items():
-                        temp_str += "{}:\n".format(key)
                         temp_str += "{}\n".format(value)
                 else:
                     temp_str += line
@@ -271,7 +310,7 @@ class Generator():
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride, layer_type)
             olength = [0,1,0,0,0]
             mvuConfig = MVUConfig(self.prec, self.meminfo, self.quantIdx, ilength, ijump, wlength, wjump, countdown, olength)
-            _code_str += self._get_riscv_csr_code(mvuConfig, layer_type)
+            _code_str += self._get_riscv_csr_code(mvuConfig, layer_type, layer_name)
             _func_dict[layer_name] = _code_str
             if layer_type == "conv":
                 total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
