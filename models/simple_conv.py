@@ -38,7 +38,7 @@ def export_torch_to_onnx(model, batch_size, nb_channels, w, h):
 
 if __name__ == '__main__':
     input_size = 32
-    in_ch = 128
+    in_ch = 64
     out_ch= 64
     kernel_size = 3
     stride = 1
