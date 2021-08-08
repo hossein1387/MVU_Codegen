@@ -135,7 +135,7 @@ class Generator():
             pass
         return [oC, oH, oW]
 
-    def _get_riscv_csr_code(self, mvuConfig, layer_type, layer_name):
+    def _get_riscv_csr_code(self, mvuConfig, layer_type, layer_name, out_channels):
         iprec,wprec,oprec = mvuConfig.prec
         imem, wmem, omem  = mvuConfig.meminfo
 
@@ -240,7 +240,7 @@ class Generator():
             code_str += "{}_loop:\n".format(layer_name)
             code_str += "\taddi sp, sp, -4\n"
             code_str += "\tsw ra, 4(sp)\n"
-            code_str += "\taddi s0, x0, 64\n"
+            code_str += "\taddi s0, x0, {}\n".format(out_channels)
             code_str += "\tli s1, {}\n".format(self.mvu_res_output_base_addr)
             code_str += "\tli s2, {}\n".format(self.mvu_res_weight_base_addr)
             code_str += "\tli s3, {}\n".format(self.mvu_res_input_base_addr)
@@ -310,7 +310,8 @@ class Generator():
             ilength, ijump, wlength, wjump, countdown = self.get_mvu_param(prec, iShape, fShape, stride, layer_type)
             olength = [0,1,0,0,0]
             mvuConfig = MVUConfig(self.prec, self.meminfo, self.quantIdx, ilength, ijump, wlength, wjump, countdown, olength)
-            _code_str += self._get_riscv_csr_code(mvuConfig, layer_type, layer_name)
+            # import ipdb as pdb; pdb.set_trace()
+            _code_str += self._get_riscv_csr_code(mvuConfig, layer_type, layer_name, layer['out_channels'])
             _func_dict[layer_name] = _code_str
             if layer_type == "conv":
                 total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
