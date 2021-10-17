@@ -6,7 +6,7 @@ import utils
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-x', '--onnx_model', help='input onnx model', required=True)
+    parser.add_argument('-m', '--onnx_model', help='input onnx model', required=True)
     parser.add_argument('--aprec', help='Activation precision', required=False, default=8, type=int)
     parser.add_argument('--wprec', help='Weight precision', required=False, default=8, type=int)
     parser.add_argument('--oprec', help='Output precision', required=False, default=8, type=int)
