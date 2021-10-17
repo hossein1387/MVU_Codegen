@@ -164,7 +164,7 @@ class Generator():
             str_bin = int2bin(val, bits)
             return int(str_bin[0:bits], 2)
         code_str = ""
-        if layer_type == "marmul":
+        if layer_type == "matmul":
             code_str += gen_csr_instr("mvuquant", mvuConfig.quantIdx)
             code_str += gen_csr_instr("mvuwbaseptr", wmem)
             code_str += gen_csr_instr("mvuibaseptr", imem)
@@ -220,7 +220,7 @@ class Generator():
 
             code_str += "\taddi t1, x0, 1\n"
             code_str += "\tslli t1, t1, 30\n"
-            code_str += "\taddi t1, t1, {}\n".format(int(countdown))
+            code_str += "\taddi t1, t1, {}\n".format(int(mvuConfig.countdown))
             code_str += "\tcsrw mvucommand, t1\n"
             code_str += "\tret\n"
 
@@ -321,6 +321,7 @@ class Generator():
             # import ipdb as pdb; pdb.set_trace()
             if layer_type == "conv":
                 weights = layer['weight'].transpose(3,2,1,0)
+                # weights = layer['weight'].transpose(2,1,0,3)
             elif layer_type == "matmul":
                 # import ipdb as pdb; pdb.set_trace()
                 weights = layer['weight'].transpose()
