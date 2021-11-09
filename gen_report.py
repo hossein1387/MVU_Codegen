@@ -1,24 +1,19 @@
 from math import ceil
-from typing import Pattern
 from texttable import Texttable
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import OrderedDict
+import argparse
 
 
-wprec = [1,2,3,4,5,6,7,8]
-# aprec = [1,1,1,1,1,1,1,1]
-aprec = [1,2,3,4,5,6,7,8]
-cntd_val = np.zeros((len(wprec), len(aprec)))
+wprec = [1, 2, 3, 4, 5, 6, 7, 8]
+aprec = [1, 2, 3, 4, 5, 6, 7, 8]
 oprec = 8
 kernel = [1, 3, 5, 7]
-# kernel = [1,3, 5]
 input = [32, 64, 128, 256, 512]
-# input = [64]
 ichannel = [64, 128, 256, 512]
 ochannel = [64, 128, 256, 512]
-# ochannel = ichannel = [128]
-# ichannel = [64, 128, 256, 512]
+ichannel = [64, 128, 256, 512]
 stride = [1]
 mvu_var_dict = OrderedDict()
 mvu_var_dict = {"ichannel" : ichannel,
@@ -29,7 +24,13 @@ mvu_var_dict = {"ichannel" : ichannel,
                 "aprec" : aprec ,
                 }
 
-VARIABLE_TO_PLOT = "input"
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-v', '--variable_to_plot', help='variable to plot', default="kernel", choices=["ichanne", "channel", "input", "kernel"])
+    args = parser.parse_args()
+    return vars(args)
+
+
 def get_complexity(prec, iShape, fShape, stride):
     # import ipdb as pdb; pdb.set_trace()
     iprec,wprec,oprec = prec
@@ -70,7 +71,7 @@ def plot3d(dicts, plot_var):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax.view_init(10, 90)
-    mycmap = plt.get_cmap('gist_earth')
+    mycmap = plt.get_cmap('twilight')
 
     def get_pattern(new_var):
         pattern = []
@@ -89,18 +90,20 @@ def plot3d(dicts, plot_var):
         def get_func(dicts, template):
             Z = np.zeros((len(wprec), len(aprec)))
             pattern = template.copy()
-            for i,x in enumerate(W[0]):
-                for j,y in enumerate(A[0]):
-                    pattern.append(x)
-                    pattern.append(y)
+            # import ipdb as pdb; pdb.set_trace()
+            for i,w in enumerate(wprec):
+                for j,a in enumerate(aprec):
+            # for i,x in enumerate(W[0]):
+            #     for j,y in enumerate(A[0]):
+                    pattern.append(w)
+                    pattern.append(a)
                     Z[i,j] = dicts[repr(pattern)]
                     pattern = template.copy()
             return Z
         # import ipdb as pdb; pdb.set_trace()
         pattern = get_pattern(val)
         Z = get_func(dicts, pattern)
-        # surf = ax.scatter(W, A, Z, label='Input Channel Size {0}'.format(key))
-        surf = ax.plot_surface(W, A, Z, label='{0} Size {1}'.format(plot_var, val))
+        surf = ax.plot_surface(W, A, Z, edgecolors='black', lw=0.6, label='{0} Size {1}'.format(plot_var, val))
         surf._facecolors2d = surf._facecolor3d 
         surf._edgecolors2d = surf._edgecolor3d
 
@@ -109,15 +112,17 @@ def plot3d(dicts, plot_var):
     ax.set_ylabel('aprec')
     ax.set_zlabel('countdown')
     ax.legend()
-    plt.show()
-    # fig.savefig('temp.png', dpi=500)
+    # plt.show()
+    fig.savefig('{}.png'.format(plot_var), dpi=500)
 
 
 if __name__ == '__main__':
+    args = parse_args()
     t = Texttable(max_width=160)
     t.add_row(['wprec', 'aprec', 'kernel', 'ishape', 'input channel', 'output channel', 'countdown'])
     cnt_dict = {}
     # import ipdb as pdb; pdb.set_trace()
+    VARIABLE_TO_PLOT = args["variable_to_plot"]
     for ic in ichannel:
         for oc in ochannel:
             for i in input:
@@ -131,5 +136,4 @@ if __name__ == '__main__':
                             cnt_dict[repr([ic,oc,i,k,w,a])] = cntd
                             # print(cntd)
                             t.add_row([w, a, (k,k), (i,i), ic, oc, cntd])
-    print(t.draw())
     plot3d(cnt_dict, VARIABLE_TO_PLOT)
