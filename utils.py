@@ -106,5 +106,4 @@ def gen_input_test_vectors(precision, input_shape, mode="diag"):
         input_data = np.zeros((input_shape[1], input_shape[1]))
         input_data[0] = np.random.randint(max_int+1, size=(input_shape[1]))
     input_tensor = np.asarray(input_data).astype(np.float32).reshape(input_shape)
-    input_tensor = np.expand_dims(input_tensor, axis=0)
     return input_tensor

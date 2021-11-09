@@ -1,0 +1,115 @@
+{
+    "num_mvu": 8,
+    "aprec": 2,
+    "wprec": 2,
+    "oprec": 8,
+    "quantIdx": 10,
+    "mem_info": 
+    {
+      "mem_size": 8192,
+      "mvu0":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 0,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 0,
+          "size": 1024
+        }
+      },
+      "mvu1":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 1024,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 1024,
+          "size": 1024
+        }
+      },
+      "mvu2":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 2048,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 2048,
+          "size": 1024
+        }
+      },
+      "mvu3":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 3072,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 3072,
+          "size": 1024
+        }
+      },
+      "mvu4":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 4096,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 4096,
+          "size": 1024
+        }
+      },
+      "mvu5":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 5120,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 5120,
+          "size": 1024
+        }
+      },
+      "mvu6":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 6144,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 6144,
+          "size": 1024
+        }
+      },
+      "mvu7":{
+        "activations":{
+          "wordsize": 64,
+          "ptr": 0,
+          "start": 7168,
+          "size": 1024
+        },
+        "weights":{
+          "wrodsize": 4096,
+          "start": 7168,
+          "size": 1024
+        }
+      }
+    }
+  }

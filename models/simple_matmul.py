@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from collections import OrderedDict
 
 class SimpleMatMul(nn.Module):
 
@@ -24,6 +25,10 @@ class SimpleMatMul(nn.Module):
             w_data = np.random.randint(max_int+1, size=(in_ch*out_ch))
         weights = np.asarray(w_data).astype(np.float32).reshape(out_ch, in_ch)
         self.linear.weight.data = torch.from_numpy(weights)
+        # layers = OrderedDict()
+        # layers["fc"] = self.linear
+        # self.model = nn.Sequential(layers)
+
 
     def forward(self, x):
         out = self.linear(x)

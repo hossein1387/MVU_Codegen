@@ -15,6 +15,11 @@ class SimpleConv(nn.Module):
         max_int = (2**wprec) - 1 
         w_data = np.random.randint(max_int+1, size=(in_ch*out_ch*kernel_size*kernel_size))
         weights = np.asarray(w_data).astype(np.float32).reshape(out_ch, in_ch,kernel_size,kernel_size)
+        mat = np.asarray([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
+        for o_ch in range(out_ch):
+            for i_ch in range(in_ch):
+                weights[o_ch, i_ch,:,:] = mat
+        # import ipdb as pdb; pdb.set_trace()
         self.conv1.weight.data = torch.from_numpy(weights)
 
     def forward(self, x):
@@ -42,7 +47,7 @@ if __name__ == '__main__':
     out_ch= 64
     kernel_size = 3
     stride = 1
-    padding = 1
+    padding = 0
     groups = 1
     dilation = 1
     wprec = 2

@@ -21,15 +21,16 @@ class MVUConfig():
 
 class Generator():
     """docstring for Generator"""
-    def __init__(self, model, prec, input_shape, meminfo, quantIdx=10, temp_riscv_code_file="template.S"):
+    def __init__(self, model, input_shape, mvu_cfg, temp_riscv_code_file="template.S"):
         super(Generator, self).__init__()
         # expecting to receive a OnnxModel parsed object
+        # import ipdb as pdb; pdb.set_trace()
         self.model = model
-        self.prec = prec
+        self.prec = [mvu_cfg['aprec'], mvu_cfg['wprec'], mvu_cfg['oprec']]
         self.input_shape = copy.copy(input_shape)
         self.temp_riscv_code_file = temp_riscv_code_file
-        self.meminfo = meminfo
-        self.quantIdx = quantIdx
+        self.meminfo = mvu_cfg['mem_info']
+        self.quantIdx = mvu_cfg['quantIdx']
 
     def check_model_is_valid(self):
         # check if there are residual connections
@@ -58,7 +59,7 @@ class Generator():
 
     def get_mvu_param(self, prec, iShape, fShape, stride, layerType):
         iprec,wprec,oprec = prec
-        iC, iH, iW = iShape
+        oC, iC, iH, iW = iShape
         fC, fH, fW = fShape
         sW = stride 
         ilength = [0,0,0,0,0]
@@ -115,14 +116,14 @@ class Generator():
             wjump[1] = -wprec*(m_w-1)
             wjump[0] = wprec
 
-            countdown = m_w * m_h * iprec * wprec;
+            countdown = m_w * m_h * iprec * wprec
 
         return [ilength, ijump, wlength, wjump, countdown] 
 
     def infer_activation_shape(self, input, kernel, padding, stride, layerTpye):
         oC, oH, oW = [0, 0, 0]
         if layerTpye == "conv":
-            iC, iH, iW = input
+            _, iC, iH, iW = input
             fC, fH, fW = kernel
             oH=int((iH-fH+2*padding)/stride)+1
             oW=int((iW-fW+2*padding)/stride)+1
@@ -133,7 +134,6 @@ class Generator():
 
     def _get_riscv_csr_code(self, mvuConfig, layer_type):
         iprec,wprec,oprec = mvuConfig.prec
-        imem, wmem, omem  = mvuConfig.meminfo
 
         def gen_csr_instr(csr, val):
             # risc-v immediate CSRs are small and can take values from 0-31. 
@@ -165,10 +165,8 @@ class Generator():
             return int(str_bin[0:bits], 2)
         code_str = ""
         if layer_type == "matmul":
-            code_str += gen_csr_instr("mvuquant", mvuConfig.quantIdx)
-            code_str += gen_csr_instr("mvuwbaseptr", wmem)
-            code_str += gen_csr_instr("mvuibaseptr", imem)
-            code_str += gen_csr_instr("mvuobaseptr", omem)
+            code_str += "\taddi sp, sp, -4\n"
+            code_str += "\tsw ra, 4(sp)\n"
 
             code_str += "\taddi  t1, x0, 0\n"
             code_str += "\taddi  t2, x0, {}\n".format(wprec)
@@ -179,7 +177,7 @@ class Generator():
             code_str += "\taddi  t2, x0, {}\n".format(oprec)
             code_str += "\tslli  t3, t2, 12\n"
             code_str += "\tadd   t1, t1, t3\n"
-            code_str += "\tcsrw  mvuprecision,  t1\n"
+            code_str += "\tcsrw  mvuprecision, t1\n"
 
             code_str += gen_csr_instr("mvuwjump_0", mvuConfig.wjump[0])
             code_str += gen_csr_instr("mvuwjump_1", mvuConfig.wjump[1])
@@ -217,34 +215,87 @@ class Generator():
             code_str += gen_csr_instr("mvuolength_2", mvuConfig.ilength[2])
             code_str += gen_csr_instr("mvuolength_3", mvuConfig.ilength[3])
             code_str += gen_csr_instr("mvuolength_4", mvuConfig.ilength[4])
-
-            code_str += "\taddi t1, x0, 1\n"
-            code_str += "\tslli t1, t1, 30\n"
-            code_str += "\taddi t1, t1, {}\n".format(int(mvuConfig.countdown))
-            code_str += "\tcsrw mvucommand, t1\n"
+            code_str += "\tlw ra, 4(sp)\n"
+            code_str += "\taddi sp, sp, 4\n"
             code_str += "\tret\n"
 
         return code_str
 
     def __gen__riscv_code(self, model, _func_dict):
-        temp_str = ""
+        gen_code_out_str = ""
+        comp_sch_graph = {}
+        mvu_id = 0
         with open(self.temp_riscv_code_file, 'r') as f:
             lines = f.readlines()
+            
             for line in lines:
                 if "--> FUNCCALL <--" in line:
                     for key, value in _func_dict.items():
-                        temp_str += "jal sp, {}\n".format(key)
-                        temp_str += "jal t3, wait_for_mvu_irq\n"
+                        gen_code_out_str += "\tjal sp, {}\n".format(key)
                 elif "--> HERE <--" in line:
+                    # import ipdb as pdb; pdb.set_trace()
+                    imem = self.meminfo["mvu{}".format(mvu_id)]['activations']['start']
+                    wmem = self.meminfo["mvu{}".format(mvu_id)]['weights']['start']
+                    omem = self.meminfo["mvu{}".format(mvu_id)]['activations']['ptr']
                     for key, value in _func_dict.items():
-                        temp_str += "{}:\n".format(key)
-                        temp_str += "{}\n".format(value)
+                        code_blk_str = ""
+                        if value["type"] == "matmul":
+                            code_blk_str += "{}:\n".format(key)
+                            code_blk_str += "\taddi sp, sp, -4\n"
+                            code_blk_str += "\tsw ra, 4(sp)\n"
+                            code_blk_str += "\tjal {}_init\n".format(key)
+                            code_blk_str += "\tjal {}_loop\n".format(key)
+                            code_blk_str += "\tlw ra, 4(sp)\n"
+                            code_blk_str += "\taddi sp, sp, 4\n"
+                            code_blk_str += "\tret\n"
+
+                            code_blk_str += "{}_init:\n".format(key)
+                            code_blk_str += "{}\n".format(value["code"])
+
+                            code_blk_str += "# we are using 5 S type registers that we should keep their content\n"
+                            code_blk_str += "# throughout the code:\n"
+                            code_blk_str += "# s0: loop counter\n"
+                            code_blk_str += "# s1: loop counter for output address\n"
+                            code_blk_str += "# s2: loop counter for weight address\n"
+                            code_blk_str += "# s3: loop counter for input address\n"
+                            code_blk_str += "# s4: kick start command\n"
+
+                            code_blk_str += "{}_loop:\n".format(key)
+                            code_blk_str += "\taddi sp, sp, -4\n"
+                            code_blk_str += "\tsw ra, 4(sp)\n"
+                            code_blk_str += "\taddi s0, x0, {}\n".format(value['layer']['out_channels'])
+                            code_blk_str += "\tli s1, {}\n".format(omem)
+                            code_blk_str += "\tli s2, {}\n".format(wmem)
+                            code_blk_str += "\tli s3, {}\n".format(imem)
+                            code_blk_str += "\taddi s4, x0, 1\n"
+                            code_blk_str += "\tslli s4, s4, 30\n"
+                            code_blk_str += "\taddi s4, s4, 4\n"
+
+                            code_blk_str += "loop:\n"
+                            code_blk_str += "\tcsrwi mvuquant, {}\n".format(self.quantIdx)
+                            code_blk_str += "\tcsrw mvuwbaseptr, s2\n"
+                            code_blk_str += "\tcsrw mvuibaseptr, s3\n"
+                            code_blk_str += "\tcsrw mvuobaseptr , s1\n"
+                            code_blk_str += "\tcsrw mvucommand, s4\n"
+                            code_blk_str += "\tjal wait_for_mvu_irq\n"
+                            code_blk_str += "\taddi s0,s0, -1 \n"
+                            code_blk_str += "\taddi s1, s1, 2\n"
+                            code_blk_str += "\taddi s3, s3, 2\n"
+                            code_blk_str += "\tbne s0, x0, loop\n"
+                            code_blk_str += "\tlw ra, 4(sp)\n"
+                            code_blk_str += "\taddi sp, sp, 4\n"
+                            code_blk_str += "\tret\n"
+                        elif value["type"] == "conv":
+                            pass
+                        else:
+                            pass
+                        gen_code_out_str += code_blk_str
                 else:
-                    temp_str += line
+                    gen_code_out_str += line
             f.close()
         output_file = "{}.S".format(model.model_name)
         with open(output_file, 'w') as f:
-            f.write(temp_str)
+            f.write(gen_code_out_str)
             f.close()
         print("Generated kernel code is written to {}".format(output_file))
 
@@ -255,6 +306,7 @@ class Generator():
         # import ipdb as pdb; pdb.set_trace()
         input_shape = self.input_shape
         input_shape[0] = ceil(input_shape[0]/64)
+        input_shape[1] = ceil(input_shape[1]/64)
         total_cycles = 0
         _func_dict = OrderedDict()
         for layer in self.model.layers:
@@ -272,9 +324,9 @@ class Generator():
             olength = [0,1,0,0,0]
             mvuConfig = MVUConfig(self.prec, self.meminfo, self.quantIdx, ilength, ijump, wlength, wjump, countdown, olength)
             _code_str += self._get_riscv_csr_code(mvuConfig, layer_type)
-            _func_dict[layer_name] = _code_str
+            _func_dict[layer_name] = {"code": _code_str, "type": layer_type, "layer": layer}
             if layer_type == "conv":
-                total_layer_countdown = countdown * ceil((input_shape[2]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
+                total_layer_countdown = countdown * ceil((input_shape[3]+layer['padding'][0]+layer['padding'][1]) / layer['stride'][1])
             elif layer_type == "matmul":
                 total_layer_countdown = countdown
             # import ipdb as pdb; pdb.set_trace()
@@ -354,6 +406,6 @@ class Generator():
                     val_str = "".join(weight)
                     #val_str = val_str[::-1].zfill(4096)
                     layer_weights.append(val_str)
-            weight_ram[layer['name']] = layer_weights
+            weight_ram[layer['layer_name']] = layer_weights
         return weight_ram
         
